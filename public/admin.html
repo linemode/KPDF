@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>K-PDF Admin</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px}label{display:block;margin-top:8px}</style>
+</head>
+<body>
+  <h1>K-PDF Admin Panel</h1>
+  <p>Enter admin password to load lists and add records.</p>
+  <label>Admin password: <input id="pw" type="password" /></label>
+  <button id="load">Load enums & lists</button>
+
+  <h2>Add PDF Link</h2>
+  <form id="addForm">
+    <label>Main title: <input id="main_title" required /></label>
+    <label>Subtitle: <input id="subtitle" /></label>
+    <label>PDF/HWP URL: <input id="pdf_url" required /></label>
+    <label>Publisher (optional): <input id="publisher" /></label>
+
+    <label>Level 1: <select id="l1"></select></label>
+    <label>Level 2: <select id="l2"></select></label>
+    <label>Level 3: <select id="l3"></select></label>
+    <label>Level 4: <select id="l4"></select></label>
+
+    <button type="submit">Add PDF</button>
+  </form>
+
+  <h2>Existing PDFs</h2>
+  <div id="pdfList">(not loaded)</div>
+
+  <h2>Requests</h2>
+  <div id="reqList">(not loaded)</div>
+
+<script>
+async function b64(s){ return btoa(s); }
+function authHeader(pw){ return 'Basic ' + btoa('admin:' + pw); }
+
+async function loadAll(){
+  const pw = document.getElementById('pw').value;
+  if(!pw){ alert('Enter admin password'); return; }
+  const headers = { 'Authorization': authHeader(pw) };
+  const enums = await (await fetch('/api/enums')).json();
+  // populate selects
+  const l1 = document.getElementById('l1'); l1.innerHTML=''; enums.l1.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l1.appendChild(o);} )
+  const l2 = document.getElementById('l2'); l2.innerHTML=''; enums.l2.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l2.appendChild(o);} )
+  const l4 = document.getElementById('l4'); l4.innerHTML=''; enums.l4.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l4.appendChild(o);} )
+
+  // set l3 according to l1
+  function populateL3(){ const l1v=l1.value; const l3=document.getElementById('l3'); l3.innerHTML=''; const arr = l1v.includes('Secondary') ? enums.l3_secondary : enums.l3_high; arr.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l3.appendChild(o);}); }
+  l1.addEventListener('change', populateL3);
+  populateL3();
+
+  // fetch lists
+  const pdfs = await (await fetch('/api/pdfs')).json();
+  document.getElementById('pdfList').innerHTML = '<pre>'+JSON.stringify(pdfs, null, 2) + '</pre>';
+
+  const reqs = await (await fetch('/api/requests', { headers })).json();
+  document.getElementById('reqList').innerHTML = '<pre>'+JSON.stringify(reqs, null, 2) + '</pre>';
+}
+
+document.getElementById('load').addEventListener('click', loadAll);
+
+document.getElementById('addForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const pw = document.getElementById('pw').value;
+  if(!pw){ alert('Enter password'); return; }
+  const payload = {
+    main_title: document.getElementById('main_title').value,
+    subtitle: document.getElementById('subtitle').value,
+    pdf_url: document.getElementById('pdf_url').value,
+    publisher: document.getElementById('publisher').value,
+    category_l1: document.getElementById('l1').value,
+    category_l2: document.getElementById('l2').value,
+    category_l3: document.getElementById('l3').value,
+    category_l4: document.getElementById('l4').value
+  };
+  const res = await fetch('/api/pdfs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader(pw) }, body: JSON.stringify(payload)
+  });
+  if(res.ok){ alert('Created'); loadAll(); } else { const j = await res.json(); alert('Error: ' + JSON.stringify(j)); }
+});
+</script>
+</body>
+</html>

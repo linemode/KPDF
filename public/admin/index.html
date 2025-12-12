@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Admin - K-PDF</title>
+<style>
+body{font-family: 'Courier New', Courier, monospace;background:#fff;color:#000}
+#wrap{width:980px;margin:12px auto;border:3px double #333;padding:12px;background:#fff8f0}
+h1{color:#660000}
+section{margin-top:12px}
+label{display:block;margin-top:6px}
+input,select,textarea{padding:4px;border:1px solid #333}
+button{padding:6px 10px;background:#0066cc;color:#fff;border:1px solid #003366}
+pre{background:#eee;padding:8px;border:1px solid #999}
+.table{border-collapse:collapse;width:100%}
+.table th,.table td{border:1px solid #999;padding:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>K-PDF Admin Panel</h1>
+  <p style="font-size:12px">Authorized administrators only. No public links provided here.</p>
+
+  <section>
+    <h2>Add PDF Link</h2>
+    <form id="addForm">
+      <label>Main title: <input id="main_title" required /></label>
+      <label>PDF/HWP URL: <input id="pdf_url" required /></label>
+      <label>Publisher (optional): <input id="publisher" /></label>
+
+      <label>Level 1: <select id="l1"></select></label>
+      <label>Level 2: <select id="l2"></select></label>
+      <label>Level 3: <select id="l3"></select></label>
+      <label>Level 4: <select id="l4"></select></label>
+
+      <button id="addBtn" type="submit">Add PDF</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Existing PDFs</h2>
+    <div id="pdfList"><em>loading...</em></div>
+  </section>
+
+  <section>
+    <h2>Requests</h2>
+    <div style="margin-bottom:8px">
+      <label>Filter: <select id="reqFilter">
+        <option value="">All</option>
+        <option value="working">Working</option>
+        <option value="uploaded">Uploaded</option>
+        <option value="rejected">Rejected</option>
+      </select></label>
+    </div>
+    <div id="reqList"><em>loading...</em></div>
+  </section>
+</div>
+
+<script>
+function authHeaderFromCookie(){ return null; /* we use cookie session */ }
+async function loadData(){
+  const enums = await (await fetch('/api/enums')).json();
+  const l1 = document.getElementById('l1'); l1.innerHTML=''; enums.l1.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l1.appendChild(o);} )
+  const l2 = document.getElementById('l2'); l2.innerHTML=''; enums.l2.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l2.appendChild(o);} )
+  const l4 = document.getElementById('l4'); l4.innerHTML=''; enums.l4.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l4.appendChild(o);} )
+  function populateL3(){ const l1v=l1.value; const l3=document.getElementById('l3'); l3.innerHTML=''; const arr = l1v.includes('\uc911\ub4f1') ? enums.l3_secondary : enums.l3_high; arr.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; l3.appendChild(o);}); }
+  l1.addEventListener('change', populateL3);
+  populateL3();
+
+  // PDFs
+  const pdfs = await (await fetch('/api/pdfs')).json();
+  const pdiv = document.getElementById('pdfList');
+  if(!pdfs.length){ pdiv.innerHTML='<div>No PDFs yet.</div>'; } else {
+    let html = '<table class="table"><thead><tr><th>Date</th><th>Category</th><th>Title</th><th>Publisher</th><th>Link</th><th>Action</th></tr></thead><tbody>';
+    pdfs.forEach(r=>{
+      const titleText = r.main_title || r.subtitle || '';
+      html += `<tr data-id="${r.id}"><td>${new Date(r.upload_date).toLocaleString()}</td><td>${r.category_l1} / ${r.category_l2} / ${r.category_l3} / ${r.category_l4}</td><td>${escapeHtml(titleText)}</td><td>${escapeHtml(r.publisher||'')}</td><td><a href="${r.pdf_url}" target="_blank">open</a></td><td><button class="delBtn" data-id="${r.id}">Remove</button></td></tr>`;
+    });
+    html += '</tbody></table>';
+    pdiv.innerHTML = html;
+    // attach delete handlers
+    pdiv.querySelectorAll('.delBtn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const id = btn.getAttribute('data-id');
+        if(!confirm('Delete this PDF record?')) return;
+        const res = await fetch('/api/pdfs/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (res.ok) { alert('Deleted'); loadData(); } else { const j = await res.json().catch(()=>({})); alert('Error: ' + (j.error||JSON.stringify(j))); }
+      });
+    });
+  }
+
+  // Requests (admin-only)
+  const reqs = await (await fetch('/api/requests')).json();
+  const rdiv = document.getElementById('reqList');
+  const filter = document.getElementById('reqFilter');
+  
+  function renderRequests(){
+    const filtered = filter.value ? reqs.filter(r=>r.status===filter.value) : reqs;
+    if(!filtered.length){ rdiv.innerHTML = '<div>No requests.</div>'; return; }
+    let html = '<table class="table"><thead><tr><th>Date</th><th>Type</th><th>IP Address</th><th>Requested Title</th><th>Category</th><th>Comments</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+    filtered.forEach(r=>{
+      const statusColor = r.status==='working'?'#ff9':(r.status==='uploaded'?'#9f9':'#f99');
+      html += `<tr data-id="${r.id}"><td>${new Date(r.created_at).toLocaleString()}</td><td>${escapeHtml(r.request_type||'자료요청')}</td><td>${escapeHtml(r.ip_address)}</td><td>${escapeHtml(r.requested_title)}</td><td>${r.category_l1} / ${r.category_l2} / ${r.category_l3} / ${r.category_l4}</td><td>${escapeHtml(r.comments)}</td><td style="background:${statusColor};text-align:center"><strong>${r.status||'working'}</strong></td><td><button class="statusBtn" data-id="${r.id}" data-status="uploaded">Uploaded</button> <button class="statusBtn" data-id="${r.id}" data-status="rejected">Rejected</button> <button class="statusBtn" data-id="${r.id}" data-status="working">Working</button> <button class="delReqBtn" data-id="${r.id}">Delete</button></td></tr>`;
+    });
+    html += '</tbody></table>';
+    rdiv.innerHTML = html;
+    rdiv.querySelectorAll('.statusBtn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const id = btn.getAttribute('data-id');
+        const st = btn.getAttribute('data-status');
+        const res = await fetch('/api/requests/' + encodeURIComponent(id), { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({status:st}) });
+        if (res.ok) { const r = reqs.find(x=>x.id===id); if(r)r.status=st; renderRequests(); } else alert('Error');
+      });
+    });
+    rdiv.querySelectorAll('.delReqBtn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const id = btn.getAttribute('data-id');
+        if(!confirm('Delete this request?')) return;
+        const res = await fetch('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' });
+        if(res.ok){ reqs.splice(reqs.findIndex(x=>x.id===id),1); renderRequests(); } else alert('Error');
+      });
+    });
+  }
+  
+  filter.addEventListener('change', renderRequests);
+  renderRequests();
+}
+
+document.getElementById('addForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const payload = {
+    main_title: document.getElementById('main_title').value,
+    pdf_url: document.getElementById('pdf_url').value,
+    publisher: document.getElementById('publisher').value,
+    category_l1: document.getElementById('l1').value,
+    category_l2: document.getElementById('l2').value,
+    category_l3: document.getElementById('l3').value,
+    category_l4: document.getElementById('l4').value
+  };
+  const res = await fetch('/api/pdfs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  if(res.ok){ alert('Created'); loadData(); document.getElementById('addForm').reset(); } else { const j = await res.json(); alert('Error: ' + JSON.stringify(j)); }
+});
+
+function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+loadData();
+</script>
+</body>
+</html>
