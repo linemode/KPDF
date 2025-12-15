@@ -116,7 +116,18 @@ function validatePdfPayload(payload) {
   if (!category_l3 || typeof category_l3 !== 'string') {
     errors.push('category_l3 required');
   } else {
-    const allowed = category_l1 && category_l1.includes('Secondary') ? ENUMS.l3_secondary : ENUMS.l3_high;
+    // Determine allowed L3 values based on selected L1.
+    // ENUMS.l1 contains Korean strings (e.g. '중등 교육과정', '고등 교육과정'),
+    // so check for those values (or substrings) rather than English words.
+    let allowed = [];
+    if (category_l1 === ENUMS.l1[0] || (typeof category_l1 === 'string' && category_l1.includes('중등'))) {
+      allowed = ENUMS.l3_secondary;
+    } else if (category_l1 === ENUMS.l1[1] || (typeof category_l1 === 'string' && category_l1.includes('고등'))) {
+      allowed = ENUMS.l3_high;
+    } else {
+      // If L1 is unspecified or an unknown value, allow any L3 from both sets.
+      allowed = Array.from(new Set([...(ENUMS.l3_secondary || []), ...(ENUMS.l3_high || [])]));
+    }
     if (!allowed.includes(category_l3)) errors.push('Invalid category_l3 for selected category_l1');
   }
   return errors;
